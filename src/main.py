@@ -1,11 +1,14 @@
 from __future__ import annotations
+import os
 import time
+from datetime import datetime
 
 from world.world_state import WorldState
 from sim.sim_interface import SimInterfaceStub
 from agents.human_agent import HumanAgent
 from agents.robot_brain import RobotBrain
 from executor.robot_executor import RobotExecutor
+from memory.memory_writer import MemoryWriter
 
 
 def run(sim_seconds: int = 120) -> None:
@@ -13,11 +16,17 @@ def run(sim_seconds: int = 120) -> None:
     ws = WorldState.default()
 
     sim = SimInterfaceStub()
+
+    run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+    mem_dir = os.path.join("memories", run_id)
+    mem = MemoryWriter(out_dir=mem_dir)
+
     humans = [
-        HumanAgent("Dad", request_probability=0.25, move_probability=0.15),
-        HumanAgent("Mom", request_probability=0.18, move_probability=0.10),
-        HumanAgent("Child", request_probability=0.10, move_probability=0.25),
+        HumanAgent("Dad", request_probability=0.25, move_probability=0.15, memory=mem),
+        HumanAgent("Mom", request_probability=0.18, move_probability=0.10, memory=mem),
+        HumanAgent("Child", request_probability=0.10, move_probability=0.25, memory=mem),
     ]
+    
     brain = RobotBrain(low_battery_threshold=0.25)
     executor = RobotExecutor(sim=sim)
 

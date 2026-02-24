@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional
 import random
 
 from world.world_state import WorldState
+from memory.memory_writer import MemoryWriter
 
 
 ROOMS = ["Kitchen", "LivingRoom", "Bedroom", "Bathroom", "Dock"]
@@ -14,6 +15,17 @@ class HumanAgent:
     name: str
     request_probability: float = 0.15
     move_probability: float = 0.20
+    memory: MemoryWriter | None = None
+
+    def _mem(self, ws: WorldState, event_type: str, payload: Dict[str, Any]) -> None:
+        if self.memory is None:
+            return
+        self.memory.append(self.name, {
+            "t": ws.data.get("time_str", "??:??"),
+            "time_sec": ws.data.get("time_sec", None),
+            "type": event_type,
+            **payload,
+        })
 
     def update(self, ws: WorldState) -> None:
         """
@@ -32,6 +44,7 @@ class HumanAgent:
             person["location"] = new
             person["state"] = "Walking"
             ws.log_event(f"{self.name} moved {old} -> {new}")
+            self._mem(ws, "move", {"from": old, "to": new})
 
         # Occasionally generate a request
         if random.random() < self.request_probability:
@@ -39,6 +52,7 @@ class HumanAgent:
             if req is not None:
                 ws.data["requests"].append(req)
                 ws.log_event(f"{self.name} generated request: {req}")
+                self._mem(ws, "request", {"request": req})
 
     def _find_person(self, ws: WorldState) -> Optional[Dict[str, Any]]:
         for p in ws.data.get("family", []):
