@@ -9,8 +9,12 @@
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}",
             "env": {
-                "PYTHONPATH": "${workspaceFolder}/src"
-            }
+                "PYTHONPATH": "/home/xunyi/isaacsim4.5/src",
+                "RESOURCE_NAME": "IsaacSim"
+            },
+            "python": "/home/xunyi/isaacsim4.5/kit/python/bin/python3",
+            "envFile": "/home/xunyi/isaacsim4.5/.vscode/.standalone_examples.env",
+            "preLaunchTask": "setup_python_env"
         },
         {
             "name": "Run main.py",

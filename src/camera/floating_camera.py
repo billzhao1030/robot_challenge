@@ -2,7 +2,7 @@ import numpy as np
 import carb
 
 
-class FloatingCameraController:
+class FloatingCamera:
     """
     Relative-motion floating camera with explicit yaw/pitch (no accidental roll).
 
@@ -22,8 +22,6 @@ class FloatingCameraController:
         start_location,
         start_orientation,
         camera_height=1.5,
-        move_speed=1.0,
-        turn_speed=30.0,   # degrees per second for yaw/pitch
     ) -> None:
         self.simulation_app = simulation_app
 
@@ -47,8 +45,8 @@ class FloatingCameraController:
 
         self.current_position = self.start_position.copy()
 
-        self.move_speed = float(move_speed)
-        self.turn_speed = float(turn_speed)
+        self.move_speed = 1.0
+        self.turn_speed = 30.0
 
         # Explicit camera angles (degrees)
         self.yaw_deg = 0.0     # left/right
