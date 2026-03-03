@@ -54,43 +54,7 @@ class HomeSceneCfg(InteractiveSceneCfg):
             rot=(1.0, 0.0, 0.0, 0.0),
         ),
     )
-
-    human_0 = RigidObjectCfg(
-        prim_path="/World/envs/env_.*/Humans/Human_0",
-        spawn=sim_utils.CylinderCfg(
-            radius=0.18,
-            height=1.75,
-            rigid_props=sim_utils.RigidBodyPropertiesCfg(disable_gravity=False),
-            collision_props=sim_utils.CollisionPropertiesCfg(collision_enabled=True),
-            activate_contact_sensors=True,
-        ),
-        init_state=RigidObjectCfg.InitialStateCfg(pos=[1.5, 0.0, 0.875]),
-    )
-
-    human_1 = RigidObjectCfg(
-        prim_path="/World/envs/env_.*/Humans/Human_1",
-        spawn=sim_utils.CylinderCfg(
-            radius=0.17,
-            height=1.62,
-            rigid_props=sim_utils.RigidBodyPropertiesCfg(disable_gravity=False),
-            collision_props=sim_utils.CollisionPropertiesCfg(collision_enabled=True),
-            activate_contact_sensors=True,
-        ),
-        init_state=RigidObjectCfg.InitialStateCfg(pos=[1.5, 1.0, 0.81]),
-    )
-
-    human_2 = RigidObjectCfg(
-        prim_path="/World/envs/env_.*/Humans/Human_2",
-        spawn=sim_utils.CylinderCfg(
-            radius=0.14,
-            height=1.10,
-            rigid_props=sim_utils.RigidBodyPropertiesCfg(disable_gravity=False),
-            collision_props=sim_utils.CollisionPropertiesCfg(collision_enabled=True),
-            activate_contact_sensors=True,
-        ),
-        init_state=RigidObjectCfg.InitialStateCfg(pos=[0.5, 0.5, 0.55]),
-    )
-
+    
 def setup_camera():
     loc = [-2.022355307502785, 1.617730767355105, 0.0]
     ori = [0.687852177796288, 0.0, 0.0, -0.7258507983745032]

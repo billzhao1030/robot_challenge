@@ -84,8 +84,8 @@ class FloatingCamera:
             self._keyboard, self._sub_keyboard_event
         )
 
-        pos_del = 4.0
-        ang_del = 5.0
+        pos_del = 6.0
+        ang_del = 6.0
         up_del = 1.0
         pitch_del = 2.0
 
@@ -94,8 +94,8 @@ class FloatingCamera:
             "W": [ -pos_del,  0.0,     0.0,     0.0,      0.0],
             "S": [ pos_del,  0.0,     0.0,     0.0,      0.0],
 
-            "J": [ 0.0,      1.0,     0.0,     0.0,      0.0],
-            "L": [ 0.0,     -1.0,     0.0,     0.0,      0.0],
+            "J": [ 0.0,      -pos_del,     0.0,     0.0,      0.0],
+            "L": [ 0.0,      pos_del,     0.0,     0.0,      0.0],
 
             "A": [ 0.0,      0.0,    ang_del,  0.0,      0.0],  # yaw left
             "D": [ 0.0,      0.0,   -ang_del,  0.0,      0.0],  # yaw right
