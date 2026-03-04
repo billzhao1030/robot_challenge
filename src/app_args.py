@@ -9,7 +9,7 @@ def parse_main_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     AppLauncher.add_app_launcher_args(parser)
     parser.add_argument("--move-speed", type=float, default=2, help="Root translation speed in m/s.")
-    parser.add_argument("--turn-speed-deg", type=float, default=120.0, help="Yaw rotation speed in deg/s.")
+    parser.add_argument("--turn-speed-deg", type=float, default=240.0, help="Yaw rotation speed in deg/s.")
     parser.add_argument(
         "--position-tolerance",
         type=float,

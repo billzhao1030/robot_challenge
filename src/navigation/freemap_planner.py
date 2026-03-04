@@ -90,6 +90,26 @@ class FreemapPlanner:
                 best_candidate = (candidate_x, candidate_y, min_dist_found)
         return best_candidate
 
+    def find_free_point_within_radius(self, x: float, y: float, radius_m: float) -> tuple[float, float] | None:
+        radius_cells = max(0, int(math.ceil(radius_m / max(self.grid_resolution, 1.0e-6))))
+        center_x, center_y = self.world_to_grid(x, y)
+        best_candidate = None
+        best_dist_sq = float("inf")
+
+        for idx_y in range(max(0, center_y - radius_cells), min(self.height, center_y + radius_cells + 1)):
+            for idx_x in range(max(0, center_x - radius_cells), min(self.width, center_x + radius_cells + 1)):
+                if not self.is_free(idx_x, idx_y):
+                    continue
+                world_x, world_y = self.grid_to_world(idx_x, idx_y)
+                dist_sq = (world_x - x) ** 2 + (world_y - y) ** 2
+                if dist_sq > radius_m**2:
+                    continue
+                if dist_sq < best_dist_sq:
+                    best_dist_sq = dist_sq
+                    best_candidate = (world_x, world_y)
+
+        return best_candidate
+
 
 def heuristic(node: tuple[int, int], goal: tuple[int, int]) -> float:
     return math.hypot(goal[0] - node[0], goal[1] - node[1])

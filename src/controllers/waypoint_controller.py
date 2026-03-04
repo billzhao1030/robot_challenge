@@ -21,16 +21,30 @@ class WaypointController:
     ) -> None:
         self.robot = robot
         self.device = robot.device
-        self.waypoints = torch.tensor(waypoints_xyz, dtype=torch.float32, device=self.device)
         self.move_speed = move_speed
         self.turn_speed_rad = turn_speed_rad
         self.position_tolerance = position_tolerance
         self.yaw_tolerance_rad = yaw_tolerance_rad
-        self.current_index = 0
-        self.finished = len(waypoints_xyz) == 0
         self.default_joint_pos = self.robot.data.default_joint_pos.clone()
         self.default_joint_vel = self.robot.data.default_joint_vel.clone()
         self.zero_root_velocity = torch.zeros((self.robot.num_instances, 6), device=self.device)
+        self.waypoints = torch.empty((0, 3), dtype=torch.float32, device=self.device)
+        self.current_index = 0
+        self.finished = True
+        self.set_waypoints(waypoints_xyz)
+
+    def set_waypoints(self, waypoints_xyz: list[tuple[float, float, float]]) -> None:
+        if len(waypoints_xyz) == 0:
+            self.waypoints = torch.empty((0, 3), dtype=torch.float32, device=self.device)
+            self.current_index = 0
+            self.finished = True
+            print("[Waypoint] route cleared.")
+            return
+
+        self.waypoints = torch.tensor(waypoints_xyz, dtype=torch.float32, device=self.device)
+        self.current_index = 0
+        self.finished = False
+        print(f"[Waypoint] loaded {len(waypoints_xyz)} waypoint(s).")
 
     def initialize(self) -> None:
         root_state = self.robot.data.default_root_state.clone()

@@ -29,15 +29,14 @@ from controllers.waypoint_controller import WaypointController
 from navigation.freemap_planner import FreemapPlanner, add_path_debug_vis, plan_waypoint_path
 
 
-DEFAULT_WAYPOINTS: list[tuple[float, float, float]] = [
-    (-4.75, -3.08, 0.74),
-    (-0.33, 1.65, 0.74)
-]
+DEFAULT_WAYPOINT: tuple[float, float, float] = (-4.75, -3.08, 0.74)
+TARGET_LOCATION: tuple[float, float, float] = (-0.65, 2.14, 0.74)
 
 LEFT_HAND_BODY_NAME = "left_six_link"
 ROBOT_PRIM_PATH = "/World/envs/env_0/Robot"
 MONITORED_OBJECT_PRIM_PATH = "/World/envs/env_0/House/Meshes/studyroom_767841/ornament_0015"
-GRAB_DISTANCE_THRESHOLD = 1
+PICK_DISTANCE_THRESHOLD = 1
+PLACE_DISTANCE_THRESHOLD = 1
 HAND_ATTACH_OFFSET = Gf.Vec3d(0.0, 0.0, -0.08)
 GRABBED_OBJECT_USD_PATH = "/home/xunyi/isaacsim5.1/projects/robot_challenge/data/kujiale_0003/Meshes/ornament_0015.usd"
 
@@ -201,6 +200,43 @@ def set_prim_local_pose(
         orient_op.Set(Gf.Quatd(local_orientation))
 
 
+def vec3d_to_xyz(value: Gf.Vec3d) -> tuple[float, float, float]:
+    return (float(value[0]), float(value[1]), float(value[2]))
+
+
+def get_robot_root_xyz(robot) -> tuple[float, float, float]:
+    root_pos = robot.data.root_pos_w[0]
+    return tuple(float(v) for v in root_pos.tolist())
+
+
+def distance_xyz(point_a: tuple[float, float, float], point_b: tuple[float, float, float]) -> float:
+    return math.dist(point_a, point_b)
+
+
+def plan_phase_waypoints(
+    planner: FreemapPlanner,
+    start_xyz: tuple[float, float, float],
+    goal_xyz: tuple[float, float, float],
+    approach_threshold: float | None = None,
+) -> tuple[list[tuple[float, float, float]], tuple[float, float, float]]:
+    approach_goal = goal_xyz
+    if approach_threshold is not None:
+        free_goal_xy = planner.find_free_point_within_radius(goal_xyz[0], goal_xyz[1], approach_threshold)
+        if free_goal_xy is not None:
+            approach_goal = (free_goal_xy[0], free_goal_xy[1], goal_xyz[2])
+        else:
+            fallback_goal = planner.find_nearest_reachable(goal_xyz[0], goal_xyz[1])
+            if fallback_goal is None:
+                raise RuntimeError(f"Could not find a reachable approach point near {goal_xyz}.")
+            approach_goal = (fallback_goal[0], fallback_goal[1], goal_xyz[2])
+            print(
+                f"[Waypoint] no reachable point inside {approach_threshold:.2f} m of {goal_xyz}; "
+                f"falling back to nearest reachable {approach_goal}."
+            )
+
+    return plan_waypoint_path(planner=planner, start_xyz=start_xyz, goals_xyz=[approach_goal]), approach_goal
+
+
 class ProximityGrabber:
     def __init__(
         self,
@@ -230,6 +266,16 @@ class ProximityGrabber:
 
         if not self.object_prim or not self.object_prim.IsValid():
             raise RuntimeError(f"Object prim not found: {object_prim_path}")
+
+    def distance_to_object(self) -> float:
+        robot_root = self.robot.data.root_pos_w[0].clone()
+        robot_probe = Gf.Vec3d(float(robot_root[0]), float(robot_root[1]), 0.8)
+        object_pos = get_world_translation(self.object_prim)
+        return (
+            (robot_probe[0] - object_pos[0]) ** 2
+            + (robot_probe[1] - object_pos[1]) ** 2
+            + (robot_probe[2] - object_pos[2]) ** 2
+        ) ** 0.5
 
     def _attach_object_under_hand(self) -> None:
         object_name = self.object_prim.GetName()
@@ -276,11 +322,7 @@ class ProximityGrabber:
     def update(self) -> None:
         self._step_count += 1
         if not self.is_attached and not self.is_released:
-            robot_root = self.robot.data.root_pos_w[0].clone()
-            robot_probe = Gf.Vec3d(float(robot_root[0]), float(robot_root[1]), 0.8)
-            object_pos = get_world_translation(self.object_prim)
-
-            distance = ((robot_probe[0] - object_pos[0]) ** 2 + (robot_probe[1] - object_pos[1]) ** 2 + (robot_probe[2] - object_pos[2]) ** 2) ** 0.5
+            distance = self.distance_to_object()
             if self._step_count % 120 == 0:
                 print(f"[Grab] distance to object: {distance:.3f} m")
             if distance < self.trigger_distance:
@@ -318,18 +360,15 @@ def main():
     scene.reset()
     scene.update(sim.get_physics_dt())
 
-    initial_goals = DEFAULT_WAYPOINTS.copy()
     default_root_state = robot.data.default_root_state[0].clone()
     start_xyz = tuple(float(v) for v in default_root_state[:3].tolist())
     planner = FreemapPlanner(args.freemap_path, safety_margin_m=args.path_clearance)
-    planned_waypoints = plan_waypoint_path(
+    object_location = vec3d_to_xyz(get_world_translation(stage.GetPrimAtPath(MONITORED_OBJECT_PRIM_PATH)))
+    planned_waypoints, default_approach = plan_phase_waypoints(
         planner=planner,
         start_xyz=start_xyz,
-        goals_xyz=initial_goals,
+        goal_xyz=DEFAULT_WAYPOINT,
     )
-
-    if args.plan_debug_vis:
-        add_path_debug_vis(stage, [start_xyz] + planned_waypoints)
 
     controller = WaypointController(
         robot=robot,
@@ -345,29 +384,98 @@ def main():
         robot=robot,
         hand_body_name=LEFT_HAND_BODY_NAME,
         object_prim_path=MONITORED_OBJECT_PRIM_PATH,
-        trigger_distance=GRAB_DISTANCE_THRESHOLD,
+        trigger_distance=PICK_DISTANCE_THRESHOLD,
         grabbed_object_usd_path=GRABBED_OBJECT_USD_PATH,
     )
 
+    def load_route(
+        start_pose_xyz: tuple[float, float, float],
+        goal_xyz: tuple[float, float, float],
+        label: str,
+        approach_threshold: float | None = None,
+    ) -> tuple[float, float, float]:
+        route_waypoints, approach_goal = plan_phase_waypoints(
+            planner=planner,
+            start_xyz=start_pose_xyz,
+            goal_xyz=goal_xyz,
+            approach_threshold=approach_threshold,
+        )
+        controller.set_waypoints(route_waypoints)
+        if args.plan_debug_vis:
+            add_path_debug_vis(stage, [start_pose_xyz] + route_waypoints)
+        print(f"[Waypoint] {label} goal: {goal_xyz}")
+        print(f"[Waypoint] {label} approach goal: {approach_goal}")
+        print(f"[Waypoint] {label} planned path: {controller.waypoints.tolist()}")
+        return approach_goal
+
+    if args.plan_debug_vis:
+        add_path_debug_vis(stage, [start_xyz] + planned_waypoints)
+
     print("[OK] Scene ready: house + G1.")
-    print(f"[Waypoint] raw goals: {initial_goals}")
+    print(f"[Waypoint] default waypoint: {DEFAULT_WAYPOINT}")
+    print(f"[Task] object location: {object_location}")
+    print(f"[Task] target location: {TARGET_LOCATION}")
     print(f"[Waypoint] freemap resolution: {planner.grid_resolution:.4f} m, safety margin: {args.path_clearance:.3f} m")
-    print(f"[Waypoint] planned path: {controller.waypoints.tolist()}")
+    print(f"[Waypoint] default approach goal: {default_approach}")
+    print(f"[Waypoint] default planned path: {controller.waypoints.tolist()}")
     print(f"[Grab] monitoring {MONITORED_OBJECT_PRIM_PATH}")
-    release_target_xyz = initial_goals[-1] if initial_goals else None
+    task_phase = "to_default"
+    route_blocked_logged = False
 
     while simulation_app.is_running():
         dt = sim.get_physics_dt()
+
+        robot_xyz = get_robot_root_xyz(robot)
+
+        if task_phase == "to_default" and controller.finished:
+            load_route(
+                start_pose_xyz=robot_xyz,
+                goal_xyz=object_location,
+                label="object",
+                approach_threshold=PICK_DISTANCE_THRESHOLD,
+            )
+            task_phase = "to_object"
+            route_blocked_logged = False
+
+        if task_phase == "to_object" and not grabber.is_attached:
+            object_distance = grabber.distance_to_object()
+            if object_distance <= PICK_DISTANCE_THRESHOLD:
+                controller.set_waypoints([])
+                task_phase = "grab_object"
+                print(f"[Task] within pick threshold ({object_distance:.3f} m). Grabbing object.")
+
+        if task_phase == "to_target" and not grabber.is_released:
+            target_distance = distance_xyz(robot_xyz, TARGET_LOCATION)
+            if target_distance <= PLACE_DISTANCE_THRESHOLD:
+                controller.set_waypoints([])
+                grabber.release_to_world(TARGET_LOCATION)
+                task_phase = "done"
+                print(f"[Task] within place threshold ({target_distance:.3f} m). Object placed.")
+            elif controller.finished and not route_blocked_logged:
+                print(
+                    f"[Task] route to target ended at {robot_xyz}, which is still "
+                    f"{target_distance:.3f} m from the target."
+                )
+                route_blocked_logged = True
+
         controller.update(dt)
         grabber.update()
-        if controller.finished and release_target_xyz is not None:
-            grabber.release_to_world(release_target_xyz)
+
+        if task_phase in {"to_object", "grab_object"} and grabber.is_attached:
+            robot_xyz = get_robot_root_xyz(robot)
+            load_route(
+                start_pose_xyz=robot_xyz,
+                goal_xyz=TARGET_LOCATION,
+                label="target",
+                approach_threshold=PLACE_DISTANCE_THRESHOLD,
+            )
+            task_phase = "to_target"
+            route_blocked_logged = False
+
         sim.step(render=True)
         if camera is not None:
             camera.run(dt)
         scene.update(dt)
-        # if controller.finished:
-        #     break
 
     simulation_app.close()
 
