@@ -31,15 +31,12 @@ from navigation.freemap_planner import FreemapPlanner, add_path_debug_vis, plan_
 
 DEFAULT_WAYPOINTS: list[tuple[float, float, float]] = [
     (-4.75, -3.08, 0.74),
-    (-0.33, 1.65, 0.74)
 ]
 
 LEFT_HAND_BODY_NAME = "left_six_link"
-ROBOT_PRIM_PATH = "/World/envs/env_0/Robot"
 MONITORED_OBJECT_PRIM_PATH = "/World/envs/env_0/House/Meshes/studyroom_767841/ornament_0015"
-GRAB_DISTANCE_THRESHOLD = 1
+GRAB_DISTANCE_THRESHOLD = 1.0
 HAND_ATTACH_OFFSET = Gf.Vec3d(0.0, 0.0, -0.08)
-GRABBED_OBJECT_USD_PATH = "/home/xunyi/isaacsim5.1/projects/robot_challenge/data/kujiale_0003/Meshes/ornament_0015.usd"
 
 
 @configclass
@@ -57,48 +54,10 @@ class HomeSceneCfg(InteractiveSceneCfg):
     g1: ArticulationCfg = G1_CFG.replace(
         prim_path="/World/envs/env_.*/Robot",
         init_state=ArticulationCfg.InitialStateCfg(
-            pos=(-5.51, -3.11, 0.74),
+            pos=(-5.11, -1.11, 0.8),
             rot=(1.0, 0.0, 0.0, 0.0),
         ),
     )
-
-    # 暂时不在房间里放人，先保留原始圆柱体配置但注释掉，不删除。
-    #
-    # human_0 = RigidObjectCfg(
-    #     prim_path="/World/envs/env_.*/Humans/Human_0",
-    #     spawn=sim_utils.CylinderCfg(
-    #         radius=0.18,
-    #         height=1.75,
-    #         rigid_props=sim_utils.RigidBodyPropertiesCfg(disable_gravity=False),
-    #         collision_props=sim_utils.CollisionPropertiesCfg(collision_enabled=True),
-    #         activate_contact_sensors=True,
-    #     ),
-    #     init_state=RigidObjectCfg.InitialStateCfg(pos=[1.5, 0.0, 0.875]),
-    # )
-    #
-    # human_1 = RigidObjectCfg(
-    #     prim_path="/World/envs/env_.*/Humans/Human_1",
-    #     spawn=sim_utils.CylinderCfg(
-    #         radius=0.17,
-    #         height=1.62,
-    #         rigid_props=sim_utils.RigidBodyPropertiesCfg(disable_gravity=False),
-    #         collision_props=sim_utils.CollisionPropertiesCfg(collision_enabled=True),
-    #         activate_contact_sensors=True,
-    #     ),
-    #     init_state=RigidObjectCfg.InitialStateCfg(pos=[1.5, 1.0, 0.81]),
-    # )
-    #
-    # human_2 = RigidObjectCfg(
-    #     prim_path="/World/envs/env_.*/Humans/Human_2",
-    #     spawn=sim_utils.CylinderCfg(
-    #         radius=0.14,
-    #         height=1.10,
-    #         rigid_props=sim_utils.RigidBodyPropertiesCfg(disable_gravity=False),
-    #         collision_props=sim_utils.CollisionPropertiesCfg(collision_enabled=True),
-    #         activate_contact_sensors=True,
-    #     ),
-    #     init_state=RigidObjectCfg.InitialStateCfg(pos=[0.5, 0.5, 0.55]),
-    # )
 
 
 def setup_camera():
@@ -127,8 +86,14 @@ def get_world_translation(prim: Usd.Prim) -> Gf.Vec3d:
     return UsdGeom.Xformable(prim).ComputeLocalToWorldTransform(Usd.TimeCode.Default()).ExtractTranslation()
 
 
-def get_world_orientation(prim: Usd.Prim) -> Gf.Quatd:
-    return Gf.Quatd(UsdGeom.Xformable(prim).ComputeLocalToWorldTransform(Usd.TimeCode.Default()).ExtractRotationQuat())
+def get_world_transform(prim: Usd.Prim) -> Gf.Matrix4d:
+    return UsdGeom.Xformable(prim).ComputeLocalToWorldTransform(Usd.TimeCode.Default())
+
+
+def multiply_transforms(left: Gf.Matrix4d, right: Gf.Matrix4d) -> Gf.Matrix4d:
+    result = Gf.Matrix4d(left)
+    result *= right
+    return result
 
 
 def set_prim_world_pose(
@@ -166,42 +131,21 @@ def set_prim_world_pose(
 
     translate_op.Set(local_matrix.ExtractTranslation())
     local_quat = local_matrix.ExtractRotationQuat()
-    orient_attr = orient_op.GetAttr()
-    if orient_attr.GetTypeName() == "quatf":
+    if orient_op.GetAttr().GetTypeName() == "quatf":
         orient_op.Set(Gf.Quatf(local_quat))
     else:
         orient_op.Set(Gf.Quatd(local_quat))
 
 
-def set_prim_local_pose(
-    prim: Usd.Prim,
-    local_translation: Gf.Vec3d,
-    local_orientation: Gf.Quatd,
-) -> None:
-    xformable = UsdGeom.Xformable(prim)
-    translate_ops = [op for op in xformable.GetOrderedXformOps() if op.GetOpType() == UsdGeom.XformOp.TypeTranslate]
-    orient_ops = [op for op in xformable.GetOrderedXformOps() if op.GetOpType() == UsdGeom.XformOp.TypeOrient]
-
-    translate_op = (
-        translate_ops[0]
-        if translate_ops
-        else xformable.AddTranslateOp(precision=UsdGeom.XformOp.PrecisionDouble)
-    )
-    orient_op = (
-        orient_ops[0]
-        if orient_ops
-        else xformable.AddOrientOp(precision=UsdGeom.XformOp.PrecisionDouble)
+def set_prim_world_transform(prim: Usd.Prim, world_transform: Gf.Matrix4d) -> None:
+    set_prim_world_pose(
+        prim,
+        world_translation=world_transform.ExtractTranslation(),
+        world_orientation=Gf.Quatd(world_transform.ExtractRotationQuat()),
     )
 
-    translate_op.Set(local_translation)
-    orient_attr = orient_op.GetAttr()
-    if orient_attr.GetTypeName() == "quatf":
-        orient_op.Set(Gf.Quatf(local_orientation))
-    else:
-        orient_op.Set(Gf.Quatd(local_orientation))
 
-
-class ProximityGrabber:
+class DirectProximityGrabber:
     def __init__(
         self,
         stage,
@@ -209,19 +153,15 @@ class ProximityGrabber:
         hand_body_name: str,
         object_prim_path: str,
         trigger_distance: float,
-        grabbed_object_usd_path: str,
     ) -> None:
         self.stage = stage
         self.robot = robot
-        self.object_prim_path = object_prim_path
         self.object_prim = stage.GetPrimAtPath(object_prim_path)
         self.trigger_distance = trigger_distance
         self.is_attached = False
-        self.is_released = False
         self._step_count = 0
-        self.grabbed_object_usd_path = grabbed_object_usd_path
-        self.attached_object_prim_path: str | None = None
-        self.original_world_orientation = get_world_orientation(self.object_prim)
+        self.attached_root_relatives: list[tuple[Usd.Prim, Gf.Matrix4d]] = []
+
         hand_body_ids, hand_body_names = robot.find_bodies(hand_body_name)
         if len(hand_body_ids) == 0:
             raise RuntimeError(f"Hand body not found: {hand_body_name}")
@@ -231,64 +171,52 @@ class ProximityGrabber:
         if not self.object_prim or not self.object_prim.IsValid():
             raise RuntimeError(f"Object prim not found: {object_prim_path}")
 
-    def _attach_object_under_hand(self) -> None:
-        object_name = self.object_prim.GetName()
-        hand_parent_path = f"{ROBOT_PRIM_PATH}/{self.hand_body_name}"
-        attached_object_path = f"{hand_parent_path}/{object_name}"
+    def _collect_attached_xforms(self) -> None:
+        root_world = get_world_transform(self.object_prim)
+        root_world_inv = root_world.GetInverse()
+        self.attached_root_relatives = []
 
-        self.stage.RemovePrim(attached_object_path)
-        original_override = self.stage.OverridePrim(self.object_prim_path)
-        original_override.SetActive(False)
+        for prim in Usd.PrimRange(self.object_prim):
+            if not prim.IsValid() or prim == self.object_prim or not prim.IsA(UsdGeom.Xformable):
+                continue
+            child_world = get_world_transform(prim)
+            rel_transform = multiply_transforms(root_world_inv, child_world)
+            self.attached_root_relatives.append((prim, rel_transform))
 
-        attached_prim = self.stage.DefinePrim(attached_object_path, "Xform")
-        attached_prim.GetReferences().AddReference(self.grabbed_object_usd_path)
-        set_prim_local_pose(
-            attached_prim,
-            local_translation=HAND_ATTACH_OFFSET,
-            local_orientation=Gf.Quatd(1.0, 0.0, 0.0, 0.0),
-        )
-
-        self.object_prim = attached_prim
-        self.attached_object_prim_path = attached_object_path
-
-    def release_to_world(self, release_xyz: tuple[float, float, float]) -> None:
-        if not self.is_attached or self.is_released:
-            return
-
-        if self.attached_object_prim_path is not None:
-            self.stage.RemovePrim(self.attached_object_prim_path)
-
-        restored_prim = self.stage.OverridePrim(self.object_prim_path)
-        restored_prim.SetActive(True)
-        references = restored_prim.GetReferences()
-        references.ClearReferences()
-        references.AddReference(self.grabbed_object_usd_path)
-        set_prim_world_pose(
-            restored_prim,
-            world_translation=Gf.Vec3d(*release_xyz),
-            world_orientation=self.original_world_orientation,
-        )
-
-        self.object_prim = restored_prim
-        self.is_released = True
-        print(f"[Grab] released {self.object_prim_path} to {list(release_xyz)}")
+        print(f"[GrabDirect] captured {len(self.attached_root_relatives)} child xformable prims under the original object")
 
     def update(self) -> None:
         self._step_count += 1
-        if not self.is_attached and not self.is_released:
+        if not self.is_attached:
             robot_root = self.robot.data.root_pos_w[0].clone()
             robot_probe = Gf.Vec3d(float(robot_root[0]), float(robot_root[1]), 0.8)
             object_pos = get_world_translation(self.object_prim)
-
-            distance = ((robot_probe[0] - object_pos[0]) ** 2 + (robot_probe[1] - object_pos[1]) ** 2 + (robot_probe[2] - object_pos[2]) ** 2) ** 0.5
+            distance = (
+                (robot_probe[0] - object_pos[0]) ** 2
+                + (robot_probe[1] - object_pos[1]) ** 2
+                + (robot_probe[2] - object_pos[2]) ** 2
+            ) ** 0.5
             if self._step_count % 120 == 0:
-                print(f"[Grab] distance to object: {distance:.3f} m")
+                print(f"[GrabDirect] distance to object: {distance:.3f} m")
             if distance < self.trigger_distance:
                 self.is_attached = True
-                self._attach_object_under_hand()
+                self._collect_attached_xforms()
                 print(
-                    f"[Grab] attached {self.object_prim.GetName()} under {ROBOT_PRIM_PATH}/{self.hand_body_name} at distance {distance:.3f} m"
+                    f"[GrabDirect] attached original {self.object_prim.GetPath()} to {self.hand_body_name} at distance {distance:.3f} m"
                 )
+
+        if self.is_attached:
+            hand_world_translation = Gf.Vec3d(*self.robot.data.body_pose_w[0, self.hand_body_idx, :3].tolist())
+            hand_world_orientation = Gf.Quatd(*self.robot.data.body_quat_w[0, self.hand_body_idx].tolist())
+            hand_rotation = Gf.Rotation(hand_world_orientation)
+            attach_translation = hand_world_translation + hand_rotation.TransformDir(HAND_ATTACH_OFFSET)
+            target_root_world = Gf.Matrix4d(1.0)
+            target_root_world.SetRotate(hand_world_orientation)
+            target_root_world.SetTranslateOnly(attach_translation)
+
+            for prim, rel_transform in self.attached_root_relatives:
+                set_prim_world_transform(prim, multiply_transforms(target_root_world, rel_transform))
+
 
 def main():
     sim_cfg = sim_utils.SimulationCfg(dt=0.01)
@@ -340,34 +268,29 @@ def main():
         yaw_tolerance_rad=math.radians(args.yaw_tolerance_deg),
     )
     controller.initialize()
-    grabber = ProximityGrabber(
+
+    grabber = DirectProximityGrabber(
         stage=stage,
         robot=robot,
         hand_body_name=LEFT_HAND_BODY_NAME,
         object_prim_path=MONITORED_OBJECT_PRIM_PATH,
         trigger_distance=GRAB_DISTANCE_THRESHOLD,
-        grabbed_object_usd_path=GRABBED_OBJECT_USD_PATH,
     )
 
     print("[OK] Scene ready: house + G1.")
     print(f"[Waypoint] raw goals: {initial_goals}")
     print(f"[Waypoint] freemap resolution: {planner.grid_resolution:.4f} m, safety margin: {args.path_clearance:.3f} m")
     print(f"[Waypoint] planned path: {controller.waypoints.tolist()}")
-    print(f"[Grab] monitoring {MONITORED_OBJECT_PRIM_PATH}")
-    release_target_xyz = initial_goals[-1] if initial_goals else None
+    print(f"[GrabDirect] monitoring original {MONITORED_OBJECT_PRIM_PATH}")
 
     while simulation_app.is_running():
         dt = sim.get_physics_dt()
         controller.update(dt)
         grabber.update()
-        if controller.finished and release_target_xyz is not None:
-            grabber.release_to_world(release_target_xyz)
         sim.step(render=True)
         if camera is not None:
             camera.run(dt)
         scene.update(dt)
-        # if controller.finished:
-        #     break
 
     simulation_app.close()
 

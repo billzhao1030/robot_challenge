@@ -12,6 +12,7 @@ class FloatingCamera:
       - Q/E: yaw left/right (look left/right)
       - R/F: pitch up/down (look up/down)
       - I/K: move up/down (world Z)
+      - P: reset look up/down to the initial level
 
     Uses yaw/pitch state -> recompute look_direction each tick.
     """
@@ -51,6 +52,7 @@ class FloatingCamera:
         # Explicit camera angles (degrees)
         self.yaw_deg = 0.0     # left/right
         self.pitch_deg = 0.0   # up/down
+        self.initial_pitch_deg = 0.0
 
         # Derived forward direction
         self.look_direction = np.array([1.0, 0.0, 0.0], dtype=np.float64)
@@ -69,7 +71,7 @@ class FloatingCamera:
         self._base_command[:] = 0.0
 
         self.yaw_deg = 0.0
-        self.pitch_deg = 0.0
+        self.pitch_deg = self.initial_pitch_deg
         self._recompute_look_direction()
         self._update_camera()
 
@@ -94,11 +96,11 @@ class FloatingCamera:
             "W": [ -pos_del,  0.0,     0.0,     0.0,      0.0],
             "S": [ pos_del,  0.0,     0.0,     0.0,      0.0],
 
-            "J": [ 0.0,      -pos_del,     0.0,     0.0,      0.0],
-            "L": [ 0.0,      pos_del,     0.0,     0.0,      0.0],
+            "A": [ 0.0,      -pos_del,     0.0,     0.0,      0.0],
+            "D": [ 0.0,      pos_del,     0.0,     0.0,      0.0],
 
-            "A": [ 0.0,      0.0,    ang_del,  0.0,      0.0],  # yaw left
-            "D": [ 0.0,      0.0,   -ang_del,  0.0,      0.0],  # yaw right
+            "J": [ 0.0,      0.0,    ang_del,  0.0,      0.0],  # yaw left
+            "L": [ 0.0,      0.0,   -ang_del,  0.0,      0.0],  # yaw right
 
             "I": [ 0.0,      0.0,     0.0,   -pitch_del, 0.0],  # pitch up
             "K": [ 0.0,      0.0,     0.0,   pitch_del, 0.0],  # pitch down
@@ -109,6 +111,12 @@ class FloatingCamera:
 
     def _sub_keyboard_event(self, event, *args, **kwargs) -> bool:
         if event.type == carb.input.KeyboardEventType.KEY_PRESS:
+            if event.input.name == "P":
+                self.pitch_deg = self.initial_pitch_deg
+                self.current_position[2] = self.start_position[2]
+                self._recompute_look_direction()
+                self._update_camera()
+                return True
             if event.input.name in self._input_keyboard_mapping:
                 self._base_command += np.array(self._input_keyboard_mapping[event.input.name], dtype=np.float64)
 
