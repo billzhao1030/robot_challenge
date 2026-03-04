@@ -66,12 +66,13 @@ class WaypointController:
         current_pose = self.robot.data.root_pose_w.clone()
         current_pos = current_pose[:, :3]
         current_quat = current_pose[:, 3:7]
-        target_pos = self.waypoints[self.current_index].view(1, 3)
+        waypoint_target = self.waypoints[self.current_index].view(1, 3)
+        target_pos = current_pos.clone()
+        target_pos[:, :2] = waypoint_target[:, :2]
 
         delta = target_pos - current_pos
         planar_delta = delta[:, :2]
         planar_distance = torch.linalg.norm(planar_delta, dim=-1)
-        distance_3d = torch.linalg.norm(delta, dim=-1)
 
         _, _, current_yaw = math_utils.euler_xyz_from_quat(current_quat)
         desired_yaw = torch.where(
@@ -81,11 +82,11 @@ class WaypointController:
         )
         yaw_error = wrap_to_pi(desired_yaw - current_yaw)
 
-        if torch.all(distance_3d <= self.position_tolerance):
+        if torch.all(planar_distance <= self.position_tolerance):
             snapped_pose = current_pose.clone()
-            snapped_pose[:, :3] = target_pos
+            snapped_pose[:, :2] = waypoint_target[:, :2]
             self.robot.write_root_pose_to_sim(snapped_pose)
-            print(f"[Waypoint] reached #{self.current_index}: {target_pos[0].tolist()}")
+            print(f"[Waypoint] reached #{self.current_index}: {waypoint_target[0].tolist()}")
             self.current_index += 1
             if self.current_index >= len(self.waypoints):
                 self.finished = True
@@ -105,15 +106,16 @@ class WaypointController:
             self.robot.write_root_pose_to_sim(next_pose)
             return
 
-        step_length = min(self.move_speed * dt, float(distance_3d.max().item()))
-        step_scale = step_length / max(float(distance_3d.max().item()), 1.0e-6)
-        next_pos = current_pos + delta * step_scale
+        step_length = min(self.move_speed * dt, float(planar_distance.max().item()))
+        step_scale = step_length / max(float(planar_distance.max().item()), 1.0e-6)
+        next_pos = current_pos.clone()
+        next_pos[:, :2] = current_pos[:, :2] + planar_delta * step_scale
         next_quat = math_utils.quat_from_euler_xyz(
             torch.zeros_like(desired_yaw),
             torch.zeros_like(desired_yaw),
             desired_yaw,
         )
         next_pose = current_pose.clone()
-        next_pose[:, :3] = next_pos
+        next_pose[:, :2] = next_pos[:, :2]
         next_pose[:, 3:7] = next_quat
         self.robot.write_root_pose_to_sim(next_pose)
