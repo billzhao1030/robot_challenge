@@ -22,7 +22,7 @@ class HomeSceneCfg(InteractiveSceneCfg):
     g1: ArticulationCfg = G1_CFG.replace(
         prim_path="/World/envs/env_.*/Robot",
         init_state=ArticulationCfg.InitialStateCfg(
-            pos=(-5.51, -3.11, 0.74),
+            pos=(0, 0, 0.74),
             rot=(1.0, 0.0, 0.0, 0.0),
         ),
     )
