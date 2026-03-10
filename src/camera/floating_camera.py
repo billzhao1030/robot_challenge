@@ -85,6 +85,7 @@ class FloatingCamera:
         self._sub_keyboard = None
         self._appwindow = None
         self._input_keyboard_mapping = {}
+        self._viewport_bound = False
 
     @staticmethod
     def _focal_from_vfov(vertical_aperture: float, vfov_deg: float) -> float:
@@ -177,6 +178,41 @@ class FloatingCamera:
             "R": [0.0, 0.0, 0.0, 0.0, up_del],    # up
             "F": [0.0, 0.0, 0.0, 0.0, -up_del],   # down
         }
+        self._bind_to_active_viewport()
+
+    def _bind_to_active_viewport(self) -> None:
+        """Bind the active viewport to this camera so movement is visible."""
+        try:
+            import omni.kit.viewport.utility as viewport_utils
+
+            viewport = viewport_utils.get_active_viewport()
+            if viewport is None:
+                return
+
+            if hasattr(viewport, "camera_path"):
+                viewport.camera_path = self.camera_path
+                self._viewport_bound = True
+            elif hasattr(viewport, "set_active_camera"):
+                viewport.set_active_camera(self.camera_path)
+                self._viewport_bound = True
+        except Exception as exc:
+            # Keep simulation running even if viewport binding is unavailable.
+            carb.log_warn(f"Failed to bind floating camera to active viewport: {exc}")
+
+    def _viewport_has_our_camera(self) -> bool:
+        """Check whether active viewport is currently looking through this camera."""
+        try:
+            import omni.kit.viewport.utility as viewport_utils
+
+            viewport = viewport_utils.get_active_viewport()
+            if viewport is None:
+                return False
+
+            if hasattr(viewport, "camera_path"):
+                return str(viewport.camera_path) == self.camera_path
+        except Exception:
+            return False
+        return False
 
     def _sub_keyboard_event(self, event, *args, **kwargs) -> bool:
         if event.type == carb.input.KeyboardEventType.KEY_PRESS:
@@ -274,6 +310,9 @@ class FloatingCamera:
         rotate_op.Set(Gf.Vec3f(float(euler[0]), float(euler[1]), float(euler[2])))
 
     def run(self, step_size: float) -> None:
+        if (not self._viewport_bound) or (not self._viewport_has_our_camera()):
+            self._bind_to_active_viewport()
+
         forward_cmd, strafe_cmd, yaw_cmd, pitch_cmd, up_cmd = self._base_command
 
         if abs(yaw_cmd) > 0:
