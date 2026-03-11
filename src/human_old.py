@@ -10,8 +10,7 @@ from app_args import parse_main_args
 
 # Enable this flag (or set HUMAN_ENABLE_PEOPLE_GOTO=1) to try omni.anim.people GoTo.
 ENABLE_PEOPLE_GOTO = True
-if os.environ.get("HUMAN_ENABLE_PEOPLE_GOTO") is not None:
-    ENABLE_PEOPLE_GOTO = os.environ.get("HUMAN_ENABLE_PEOPLE_GOTO", "0") == "1"
+PERFORM_SIM_RESET = os.environ.get("HUMAN_PERFORM_SIM_RESET", "0") == "1"
 
 FULL_EXPERIENCE_PATH = "/home/xunyi/isaacsim5.1/apps/isaacsim.exp.full.kit"
 PEOPLE_SCHEMA_STARTUP_EXTENSIONS = [
@@ -209,8 +208,8 @@ class XformWaypointController:
 def setup_camera() -> FloatingCamera:
     camera = FloatingCamera(
         simulation_app=simulation_app,
-        start_location=[0, 0, 0.0],
-        start_orientation=[0.687852177796288, 0.0, 0.0, -0.7258507983745032],
+        start_location=[0, 0, 0],
+        start_orientation=[0, 0.0, 0.0, 0.0],
         camera_height=1.3,
     )
     camera.init_manual()
@@ -383,7 +382,6 @@ def configure_people_settings(command_file_path: str) -> None:
     settings.set("/exts/omni.anim.people/command_settings/number_of_loop", 0)
     settings.set("/exts/omni.anim.people/navigation_settings/navmesh_enabled", False)
     settings.set("/exts/omni.anim.people/navigation_settings/dynamic_avoidance_enabled", False)
-
 
 def get_control_world_xyz(stage: Usd.Stage) -> tuple[float, float, float]:
     prim = stage.GetPrimAtPath(CHARACTER_CONTROL_PRIM_PATH)
@@ -592,7 +590,12 @@ def main() -> None:
         human_agent.go_to(HUMAN_GOAL_XYZ, use_occupancy=USE_OCCUPANCY_WAYPOINTS)
         print("[OK] using fallback Xform waypoint controller.")
 
-    sim.reset()
+    if PERFORM_SIM_RESET:
+        print("[Init] resetting physics before run loop...")
+        sim.reset()
+        print("[Init] physics reset complete.")
+    else:
+        print("[Init] skipping sim.reset() (set HUMAN_PERFORM_SIM_RESET=1 to enable).")
     omni.timeline.get_timeline_interface().play()
     print("[OK] human scene started.")
     print("[Human] modular command API ready: human_agent.go_to((x, y, z)) / human_agent.go_to_from_text('go x y z').")

@@ -10,9 +10,7 @@ from app_args import parse_main_args
 
 # Enable this flag (or set HUMAN_ENABLE_PEOPLE_GOTO=1) to try omni.anim.people GoTo.
 ENABLE_PEOPLE_GOTO = True
-if os.environ.get("HUMAN_ENABLE_PEOPLE_GOTO") is not None:
-    ENABLE_PEOPLE_GOTO = os.environ.get("HUMAN_ENABLE_PEOPLE_GOTO", "0") == "1"
-PERFORM_SIM_RESET = os.environ.get("HUMAN_PERFORM_SIM_RESET", "0") == "1"
+PERFORM_SIM_RESET = os.environ.get("HUMAN_PERFORM_SIM_RESET", "1") == "1"
 
 FULL_EXPERIENCE_PATH = "/home/xunyi/isaacsim5.1/apps/isaacsim.exp.full.kit"
 PEOPLE_SCHEMA_STARTUP_EXTENSIONS = [
@@ -64,10 +62,12 @@ import omni.kit.app
 import omni.kit.commands
 import omni.timeline
 import omni.usd
-from pxr import Gf, Sdf, Usd, UsdGeom
+from isaaclab.scene import InteractiveScene
+from pxr import Gf, Sdf, Usd, UsdGeom, UsdLux
 
 from camera.floating_camera import FloatingCamera
 from navigation.freemap_planner import FreemapPlanner, add_path_debug_vis, plan_waypoint_path
+from world.scene_cfg import HumanSceneCfg
 
 try:
     from isaacsim.core.utils.extensions import enable_extension
@@ -210,7 +210,7 @@ class XformWaypointController:
 def setup_camera() -> FloatingCamera:
     camera = FloatingCamera(
         simulation_app=simulation_app,
-        start_location=[0, 0, 0.0],
+        start_location=[-5.46, -1.28, 0.0],
         start_orientation=[0.687852177796288, 0.0, 0.0, -0.7258507983745032],
         camera_height=1.3,
     )
@@ -262,6 +262,23 @@ def load_house_usd(stage: Usd.Stage, usd_path: str, usd_root_prim: str) -> None:
     house_prim = stage.DefinePrim(HOUSE_PRIM_PATH, "Xform")
     house_prim.GetReferences().AddReference(usd_path, usd_root_prim)
     print(f"[OK] House referenced at {HOUSE_PRIM_PATH} from {usd_path} ({usd_root_prim})")
+
+
+def add_room_lights(stage: Usd.Stage) -> None:
+    # Key light for room interior.
+    key_light = UsdLux.DistantLight.Define(stage, "/World/KeyLight")
+    key_light.CreateIntensityAttr(2500.0)
+    key_light.CreateColorAttr(Gf.Vec3f(1.0, 0.98, 0.95))
+    key_xform = UsdGeom.XformCommonAPI(key_light.GetPrim())
+    key_xform.SetRotate(Gf.Vec3f(45.0, -30.0, 0.0), UsdGeom.XformCommonAPI.RotationOrderXYZ)
+
+    # Fill light to soften dark corners.
+    fill_light = UsdLux.SphereLight.Define(stage, "/World/FillLight")
+    fill_light.CreateIntensityAttr(15000.0)
+    fill_light.CreateRadiusAttr(0.7)
+    fill_light.CreateColorAttr(Gf.Vec3f(0.95, 0.97, 1.0))
+    fill_xform = UsdGeom.XformCommonAPI(fill_light.GetPrim())
+    fill_xform.SetTranslate(Gf.Vec3d(-0.5, 0.8, 2.6))
 
 
 def ensure_biped_setup(stage: Usd.Stage, people_assets_root: str) -> None:
@@ -384,7 +401,6 @@ def configure_people_settings(command_file_path: str) -> None:
     settings.set("/exts/omni.anim.people/command_settings/number_of_loop", 0)
     settings.set("/exts/omni.anim.people/navigation_settings/navmesh_enabled", False)
     settings.set("/exts/omni.anim.people/navigation_settings/dynamic_avoidance_enabled", False)
-
 
 def get_control_world_xyz(stage: Usd.Stage) -> tuple[float, float, float]:
     prim = stage.GetPrimAtPath(CHARACTER_CONTROL_PRIM_PATH)
@@ -526,14 +542,15 @@ def main() -> None:
     sim_cfg = sim_utils.SimulationCfg(dt=0.01)
     sim = sim_utils.SimulationContext(sim_cfg)
     sim.set_camera_view(eye=[3.0, 3.0, 2.0], target=[0.0, 0.0, 1.0])
+    scene = InteractiveScene(HumanSceneCfg(num_envs=1, env_spacing=2.5))
 
     asset_root = ensure_isaac_asset_root()
     people_assets_root = f"{asset_root}/Isaac/People/Characters"
 
-    setup_basic_scene()
     stage = omni.usd.get_context().get_stage()
     camera = None if args.headless else setup_camera()
     load_house_usd(stage=stage, usd_path=HOUSE_USD_PATH, usd_root_prim=HOUSE_USD_ROOT_PRIM)
+    add_room_lights(stage)
 
     ensure_biped_setup(stage, people_assets_root)
     character_name = spawn_human(stage, people_assets_root)
@@ -593,13 +610,16 @@ def main() -> None:
         human_agent.go_to(HUMAN_GOAL_XYZ, use_occupancy=USE_OCCUPANCY_WAYPOINTS)
         print("[OK] using fallback Xform waypoint controller.")
 
-    if PERFORM_SIM_RESET:
-        print("[Init] resetting physics before run loop...")
-        sim.reset()
-        print("[Init] physics reset complete.")
-    else:
-        print("[Init] skipping sim.reset() (set HUMAN_PERFORM_SIM_RESET=1 to enable).")
+    print("[Init] stepping once before reset (workaround)...")
+    sim.step(render=True)
+
+    print("[Init] resetting physics + scene before run loop...")
+    sim.reset()
+    scene.reset()
+    scene.update(sim.get_physics_dt())
+    print("[Init] physics + scene reset complete.")
     omni.timeline.get_timeline_interface().play()
+    
     print("[OK] human scene started.")
     print("[Human] modular command API ready: human_agent.go_to((x, y, z)) / human_agent.go_to_from_text('go x y z').")
 
@@ -611,6 +631,7 @@ def main() -> None:
         sim.step(render=True)
         if camera is not None:
             camera.run(dt)
+        scene.update(dt)
         step_count += 1
 
         for trigger_step, command_text in RUNTIME_TEXT_COMMANDS:
