@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 
 from isaaclab.app import AppLauncher
+import numpy as np
 import torch
 
 from app_args import parse_main_args
@@ -22,6 +23,7 @@ import isaaclab.sim as sim_utils
 import isaaclab.utils.math as math_utils
 import omni.physx
 import omni.usd
+from isaacsim.core.prims import SingleRigidPrim
 from isaaclab.scene import InteractiveScene
 from pxr import Gf, PhysxSchema, UsdGeom, UsdPhysics
 
@@ -30,10 +32,11 @@ from world.scene_cfg import HomeSceneCfg
 
 
 NAVIGATION_HEIGHT = 0.74
-ROBOT_GOAL: tuple[float, float, float] = (-15.0, 0.0, NAVIGATION_HEIGHT)
+ROBOT_GOAL: tuple[float, float, float] = (-20.0, 0.0, NAVIGATION_HEIGHT)
 
 OBSTACLE_PRIM_PATH = "/World/ObstacleCylinder"
-OBSTACLE_XY: tuple[float, float] = (-10.0, 0.0)
+OBSTACLE_XY: tuple[float, float] = (-6.0, 0.0)
+OBSTACLE_CLEAR_XY: tuple[float, float] = (-6.0, 2.5)
 OBSTACLE_BASE_Z = 0.0
 OBSTACLE_RADIUS = 0.55
 OBSTACLE_HEIGHT = 2.1
@@ -45,6 +48,7 @@ RAYCAST_START_OFFSET = 0.35
 RAYCAST_LOOKAHEAD = 1.0
 
 STATUS_PRINT_EVERY_STEPS = 60
+MOVE_OBSTACLE_AFTER_BLOCKED_STEPS = 120
 # Set to 0 to let the robot wait indefinitely while the path is blocked.
 MAX_RUNTIME_STEPS = 0
 
@@ -55,6 +59,19 @@ def get_obstacle_center_xyz() -> tuple[float, float, float]:
         OBSTACLE_XY[1],
         OBSTACLE_BASE_Z + 0.5 * OBSTACLE_HEIGHT,
     )
+
+
+def get_cleared_obstacle_center_xyz() -> tuple[float, float, float]:
+    return (
+        OBSTACLE_CLEAR_XY[0],
+        OBSTACLE_CLEAR_XY[1],
+        OBSTACLE_BASE_Z + 0.5 * OBSTACLE_HEIGHT,
+    )
+
+
+def get_obstacle_move_trigger_x() -> float:
+    # Move the obstacle shortly before the robot reaches the cylinder centerline.
+    return OBSTACLE_XY[0] + OBSTACLE_RADIUS + RAYCAST_LOOKAHEAD
 
 
 class RaycastGuardController:
@@ -84,6 +101,7 @@ class RaycastGuardController:
         self.finished = False
         self.blocked = False
         self._reported_hit_path: str | None = None
+        self.ignored_hit_paths: set[str] = set()
 
     def initialize(self) -> None:
         root_state = self.robot.data.default_root_state.clone()
@@ -97,6 +115,9 @@ class RaycastGuardController:
     def get_xyz(self) -> tuple[float, float, float]:
         root_pos = self.robot.data.root_pos_w[0]
         return tuple(float(v) for v in root_pos.tolist())
+
+    def ignore_hit_path(self, prim_path: str) -> None:
+        self.ignored_hit_paths.add(prim_path)
 
     def _raycast_forward(self, x: float, y: float, dir_x: float, dir_y: float, max_dist: float) -> tuple[float, str] | None:
         if max_dist <= 0.0:
@@ -116,6 +137,8 @@ class RaycastGuardController:
 
             hit_path = str(hit.get("collision") or hit.get("rigidBody") or "")
             if hit_path == "":
+                continue
+            if any(hit_path == ignored_path or hit_path.startswith(f"{ignored_path}/") for ignored_path in self.ignored_hit_paths):
                 continue
 
             hit_distance = float(hit["distance"])
@@ -253,10 +276,44 @@ def spawn_obstacle_cylinder(stage) -> None:
     physx_collision_api.CreateContactOffsetAttr(0.02)
     physx_collision_api.CreateRestOffsetAttr(0.0)
 
+    rigid_body_api = (
+        UsdPhysics.RigidBodyAPI(cylinder.GetPrim())
+        if cylinder.GetPrim().HasAPI(UsdPhysics.RigidBodyAPI)
+        else UsdPhysics.RigidBodyAPI.Apply(cylinder.GetPrim())
+    )
+    rigid_body_api.CreateRigidBodyEnabledAttr(True)
+    rigid_body_api.CreateKinematicEnabledAttr(True)
+
+    physx_rigid_body_api = (
+        PhysxSchema.PhysxRigidBodyAPI(cylinder.GetPrim())
+        if cylinder.GetPrim().HasAPI(PhysxSchema.PhysxRigidBodyAPI)
+        else PhysxSchema.PhysxRigidBodyAPI.Apply(cylinder.GetPrim())
+    )
+    physx_rigid_body_api.GetDisableGravityAttr().Set(True)
+    physx_rigid_body_api.CreateLinearDampingAttr(0.0)
+    physx_rigid_body_api.CreateAngularDampingAttr(0.0)
+
     print(
         f"[Setup] spawned cylinder at {get_obstacle_center_xyz()} "
-        f"(radius={OBSTACLE_RADIUS:.2f}, height={OBSTACLE_HEIGHT:.2f})."
+        f"(radius={OBSTACLE_RADIUS:.2f}, height={OBSTACLE_HEIGHT:.2f}, kinematic=True)."
     )
+
+
+def move_obstacle_cylinder(obstacle_body: SingleRigidPrim, center_xyz: tuple[float, float, float]) -> None:
+    set_obstacle_cylinder_pose(obstacle_body, center_xyz)
+    print(f"[Setup] moved cylinder to {center_xyz}.")
+
+
+def set_obstacle_cylinder_pose(obstacle_body: SingleRigidPrim, center_xyz: tuple[float, float, float]) -> None:
+    _, orientation = obstacle_body.get_world_pose()
+    zero_velocity = obstacle_body._backend_utils.create_zeros_tensor(
+        shape=[1, 6],
+        dtype="float32",
+        device=obstacle_body._device,
+    )
+    obstacle_body.set_world_pose(position=np.array(center_xyz, dtype=np.float32), orientation=orientation)
+    obstacle_body._rigid_prim_view.set_velocities(velocities=zero_velocity)
+    UsdGeom.XformCommonAPI(obstacle_body.prim).SetTranslate(Gf.Vec3d(*center_xyz))
 
 
 def main() -> None:
@@ -288,6 +345,8 @@ def main() -> None:
     )
     controller.initialize()
     scene.update(sim.get_physics_dt())
+    obstacle_body = SingleRigidPrim(OBSTACLE_PRIM_PATH, name="obstacle_cylinder", reset_xform_properties=False)
+    obstacle_body.initialize()
 
     print("[Setup] scene ready: G1 + blocking cylinder.")
     print(f"[Setup] goal={ROBOT_GOAL}")
@@ -298,11 +357,46 @@ def main() -> None:
     print(f"[Setup] raycast_guard_enabled={RAYCAST_GUARD_ENABLED}")
     print(f"[Setup] raycast_heights={RAYCAST_HEIGHTS}")
     print(f"[Setup] raycast_lookahead={RAYCAST_LOOKAHEAD}")
+    print(
+        "[Setup] the cylinder is moved to "
+        f"{get_cleared_obstacle_center_xyz()} so we can verify motion resumes."
+    )
+    print(
+        "[Setup] move trigger: robot blocked for "
+        f"{MOVE_OBSTACLE_AFTER_BLOCKED_STEPS} steps or robot x <= {get_obstacle_move_trigger_x():.2f}."
+    )
 
     step_counter = 0
+    blocked_steps = 0
+    obstacle_moved = False
+    obstacle_target_xyz: tuple[float, float, float] | None = None
     while simulation_app.is_running():
+        if obstacle_target_xyz is not None:
+            # Keep the kinematic obstacle at its commanded target in case the sim overwrites it.
+            set_obstacle_cylinder_pose(obstacle_body, obstacle_target_xyz)
+
         dt = sim.get_physics_dt()
         controller.update(dt)
+        robot_xyz = controller.get_xyz()
+
+        if controller.blocked:
+            blocked_steps += 1
+        else:
+            blocked_steps = 0
+
+        should_move_obstacle = (
+            not obstacle_moved
+            and (
+                blocked_steps >= MOVE_OBSTACLE_AFTER_BLOCKED_STEPS
+                or robot_xyz[0] <= get_obstacle_move_trigger_x()
+            )
+        )
+        if should_move_obstacle:
+            obstacle_target_xyz = get_cleared_obstacle_center_xyz()
+            move_obstacle_cylinder(obstacle_body, obstacle_target_xyz)
+            controller.ignore_hit_path(OBSTACLE_PRIM_PATH)
+            obstacle_moved = True
+
         sim.step(render=True)
         if camera is not None:
             camera.run(dt)

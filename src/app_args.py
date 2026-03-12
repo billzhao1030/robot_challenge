@@ -8,7 +8,7 @@ from isaaclab.app import AppLauncher
 def parse_main_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     AppLauncher.add_app_launcher_args(parser)
-    parser.add_argument("--move-speed", type=float, default=1, help="Root translation speed in m/s.")
+    parser.add_argument("--move-speed", type=float, default=3.5, help="Root translation speed in m/s.")
     parser.add_argument("--turn-speed-deg", type=float, default=360.0, help="Yaw rotation speed in deg/s.")
     parser.add_argument(
         "--position-tolerance",
