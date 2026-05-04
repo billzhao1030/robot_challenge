@@ -86,6 +86,11 @@ class FloatingCamera:
         self._appwindow = None
         self._input_keyboard_mapping = {}
         self._viewport_bound = False
+        self.input_enabled = True
+
+    def set_input_enabled(self, enabled: bool) -> None:
+        self.input_enabled = bool(enabled)
+        self._base_command[:] = 0.0
 
     @staticmethod
     def _focal_from_vfov(vertical_aperture: float, vfov_deg: float) -> float:
@@ -215,23 +220,27 @@ class FloatingCamera:
         return False
 
     def _sub_keyboard_event(self, event, *args, **kwargs) -> bool:
+        if not self.input_enabled:
+            return True
+
+        key_name = str(getattr(event.input, "name", event.input)).split(".")[-1].upper()
         if event.type == carb.input.KeyboardEventType.KEY_PRESS:
-            if event.input.name == "P":
+            if key_name == "P":
                 self.pitch_deg = self.initial_pitch_deg
                 self.current_position[2] = self.start_position[2]
                 self._recompute_look_direction()
                 self._update_camera()
                 return True
-            if event.input.name in self._input_keyboard_mapping:
+            if key_name in self._input_keyboard_mapping:
                 self._base_command += np.array(
-                    self._input_keyboard_mapping[event.input.name],
+                    self._input_keyboard_mapping[key_name],
                     dtype=np.float64
                 )
 
         elif event.type == carb.input.KeyboardEventType.KEY_RELEASE:
-            if event.input.name in self._input_keyboard_mapping:
+            if key_name in self._input_keyboard_mapping:
                 self._base_command -= np.array(
-                    self._input_keyboard_mapping[event.input.name],
+                    self._input_keyboard_mapping[key_name],
                     dtype=np.float64
                 )
 

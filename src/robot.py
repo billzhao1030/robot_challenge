@@ -64,7 +64,7 @@ PRECONDITION_MIN_IDLE_STEPS = 200
 def setup_camera():
     camera = FloatingCamera(
         simulation_app=simulation_app,
-        start_location=[-5.46, -1.28, 0.0],
+        start_location=[0, 0, 0.0],
         start_orientation=[0.687852177796288, 0.0, 0.0, -0.7258507983745032],
         camera_height=1.3,
     )
