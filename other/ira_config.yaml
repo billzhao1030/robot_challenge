@@ -1,0 +1,15 @@
+isaacsim.replicator.agent:
+  version: 0.5.1
+  global:
+    seed: 123456
+    simulation_length: 500
+
+  scene:
+    asset_path: "omniverse://localhost/NVIDIA/Assets/Isaac/4.5/Isaac/Environments/Simple_Warehouse/full_warehouse.usd"
+
+  character:
+    asset_path: "omniverse://localhost/NVIDIA/Assets/Isaac/4.5/Isaac/People/Characters/"
+    num: 3          # number of human characters to spawn
+    command_file: "my_commands.txt"
+
+  write_data: false

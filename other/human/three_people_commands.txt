@@ -1,0 +1,15 @@
+# Person 1: walk -> idle -> look around
+Character_01 GoTo 2 0 0 _
+Character_01 Idle 3
+Character_01 LookAround 4
+Character_01 GoTo 0 0 0 _
+
+# Person 2: short walk loop
+Character_02 GoTo 0 2 0 _
+Character_02 Idle 2
+Character_02 GoTo 0 -2 0 _
+
+# Person 3: mostly idle + head movement
+Character_03 Idle 2
+Character_03 LookAround 6
+Character_03 Idle 2

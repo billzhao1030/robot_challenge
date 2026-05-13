@@ -1,0 +1,33 @@
+isaacsim.replicator.agent:
+  version: 0.5.1
+
+  global:
+    seed: 123
+    # IMPORTANT: doc says this is in FRAMES assuming 30 FPS (300 -> 10s) :contentReference[oaicite:7]{index=7}
+    simulation_length: 600   # ~20 seconds
+
+  scene:
+    # Replace [ASSET_ROOT] with your Isaac Sim asset root
+    # Example from docs: .../Isaac/Environments/Simple_Warehouse/full_warehouse.usd :contentReference[oaicite:8]{index=8}
+    asset_path: "[ASSET_ROOT]/Isaac/Environments/Simple_Warehouse/full_warehouse.usd"
+
+  sensor:
+    # If you only care about people motion (not SDG output), keep this small.
+    camera_num: 1
+
+  character:
+    asset_path: "[ASSET_ROOT]/Isaac/People/Characters/"
+    num: 3
+    command_file: "./three_people_commands.txt"
+    filters: ""
+
+  robot:
+    nova_carter_num: 0
+    transporter_num: 0
+    write_data: false
+
+  replicator:
+    writer: IRABasicWriter
+    parameters:
+      output_dir: "./ira_out"
+      rgb: true

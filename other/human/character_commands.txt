@@ -1,0 +1,42 @@
+# =============================================================================
+# character_commands.txt
+# =============================================================================
+# Command reference:
+#   GoTo  <x> <y> <z> <rotation_deg|_>   – walk to world XYZ, face direction
+#   Idle  <seconds>                        – stand still
+#   LookAround <seconds>                   – head-scan left/right
+#   Sit   <prim_path> <seconds>            – sit on a seat prim (needs setup)
+#
+# Character names match the USD prim names IRA spawns:
+#   First character  → "Character"
+#   Second character → "Character_01"
+#   Third character  → "Character_02"
+# =============================================================================
+
+# --- Person 1 : patrol a square, pause, look around, return ---
+Character GoTo  5.0  0.0  0  0
+Character GoTo  5.0  5.0  0  90
+Character GoTo  0.0  5.0  0  180
+Character Idle 4
+Character LookAround 3
+Character GoTo  0.0  0.0  0  270
+Character Idle 3
+
+# --- Person 2 : idle, then criss-cross ---
+Character_01 Idle 2
+Character_01 LookAround 4
+Character_01 GoTo -3.0  2.0  0  45
+Character_01 GoTo  3.0  6.0  0  315
+Character_01 Idle 3
+Character_01 LookAround 3
+Character_01 GoTo  0.0  0.0  0  180
+
+# --- Person 3 : big loop, lots of looking ---
+Character_02 LookAround 5
+Character_02 GoTo  4.0 -2.0  0  0
+Character_02 GoTo  7.0 -2.0  0  90
+Character_02 LookAround 2
+Character_02 GoTo  7.0  4.0  0  180
+Character_02 GoTo  0.0  4.0  0  270
+Character_02 Idle 4
+Character_02 GoTo  0.0  0.0  0  0

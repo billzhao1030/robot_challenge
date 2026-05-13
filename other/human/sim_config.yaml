@@ -1,0 +1,46 @@
+# =============================================================================
+# sim_config.yaml  –  IRA configuration for three_people_sim
+# =============================================================================
+# Adjust the paths below to match your Isaac Sim asset root.
+# Use the Nucleus path if you have NVIDIA Nucleus running locally, or
+# replace with the local absolute path to your Isaac Sim asset cache.
+#
+# Typical Nucleus path prefix:
+#   omniverse://localhost/NVIDIA/Assets/Isaac/4.2/
+#
+# Typical local cache path (Linux example):
+#   /home/<user>/.cache/ov/pkg/isaac-sim-4.5.0/extscache/.../
+# =============================================================================
+
+isaacsim.replicator.agent:
+  version: 0.5.1
+
+  global:
+    seed: 42
+    simulation_length: 300       # frames  (~10 s at 30 fps)
+
+  scene:
+    # Point this at any warehouse / office USD, or leave blank for empty stage
+    asset_path: omniverse://localhost/NVIDIA/Assets/Isaac/4.2/Isaac/Environments/Simple_Warehouse/full_warehouse.usd
+
+  sensor:
+    camera_num: 1                # one overhead camera
+
+  character:
+    # Directory that holds the character USD files
+    asset_path: omniverse://localhost/NVIDIA/Assets/Isaac/4.2/Isaac/People/Characters/
+    command_file: character_commands.txt   # relative or absolute path
+    filters: ''
+    num: 3                       # spawn exactly 3 people
+
+  robot:
+    nova_carter_num: 0
+    transporter_num: 0
+    write_data: false
+
+  replicator:
+    writer: BasicWriter
+    parameters:
+      output_dir: ./output       # data lands here; leave blank for system temp
+      rgb: true
+      object_info_bounding_box_2d_tight: false

@@ -1,0 +1,6 @@
+Character_01 GoTo 5.0 0.0 0.0
+Character_01 Idle 3
+Character_01 GoTo -2.0 3.0 0.0
+Character_02 GoTo 0.0 5.0 0.0
+Character_02 Idle 5
+Character_03 GoTo 2.0 -3.0 0.0
